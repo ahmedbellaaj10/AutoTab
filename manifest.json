@@ -1,0 +1,21 @@
+{
+    "name": "AutoTab",
+    "version": "1.0.0",
+    "manifest_version": 3,
+    "description": "An extension that uses LLMs to provide tab-to-complete AI assistance to any text field on the web.",
+    "author": "bellaajahmed1998@gmail.com",
+    "permissions": ["storage"],
+    "host_permissions": ["<all_urls>"],
+    "content_scripts": [
+    {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "run_at": "document_idle"
+    }
+    ],
+    "action": {
+      "default_popup": "popup.html",
+      "default_icon": "icon.png"
+    }
+  }
+  
