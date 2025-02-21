@@ -1,78 +1,113 @@
 console.log("AutoTab content script running...");
 
-let activeTextarea = null;
+let activeInput = null;
 let ghostSpan = null;
+let debounceTimeout = null;
+let loadingTimeout = null;
+let lastAISuggestion = "";
 
-// Function to create the ghost text overlay inside the textarea
-function createGhostTextElement(textarea) {
+// Function to create a ghost text overlay inside the input field
+function createGhostTextElement(input) {
     if (ghostSpan) {
-        ghostSpan.remove(); // Remove old ghost text if it exists
+        ghostSpan.remove();
     }
 
-    // Create ghost text span inside the textarea's parent container
     ghostSpan = document.createElement("span");
+    const computedStyles = getComputedStyle(input); // Extract styles from the input field
+
     ghostSpan.style.position = "absolute";
-    ghostSpan.style.pointerEvents = "none"; // Non-interactive
-    ghostSpan.style.opacity = "0.4"; // Semi-transparent
-    ghostSpan.style.color = "gray"; // Ghost text color
-    ghostSpan.style.fontSize = getComputedStyle(textarea).fontSize;
-    ghostSpan.style.fontFamily = getComputedStyle(textarea).fontFamily;
-    ghostSpan.style.lineHeight = getComputedStyle(textarea).lineHeight;
-    ghostSpan.style.padding = getComputedStyle(textarea).padding;
-    ghostSpan.style.margin = getComputedStyle(textarea).margin;
-    ghostSpan.style.whiteSpace = "pre-wrap"; // Preserve spaces & newlines
-    ghostSpan.style.overflow = "hidden"; // Prevent text overflow
-    ghostSpan.style.userSelect = "none"; // Prevent user selection
-    ghostSpan.style.background = "transparent"; // Ensure it blends naturally
-    ghostSpan.style.left = "0px";
-    ghostSpan.style.top = "0px";
-    ghostSpan.style.position = "absolute";
-    ghostSpan.style.zIndex = "1"; // Ensure it's under the real text
+    ghostSpan.style.pointerEvents = "none";
+    ghostSpan.style.opacity = "0.4"; // Ensure faded effect
+    ghostSpan.style.color = computedStyles.color; // Match text color
+    ghostSpan.style.fontSize = computedStyles.fontSize;
+    ghostSpan.style.fontFamily = computedStyles.fontFamily;
+    ghostSpan.style.fontWeight = computedStyles.fontWeight;
+    ghostSpan.style.letterSpacing = computedStyles.letterSpacing;
+    ghostSpan.style.lineHeight = computedStyles.lineHeight;
+    ghostSpan.style.whiteSpace = "pre-wrap";
+    ghostSpan.style.padding = computedStyles.padding;
+    ghostSpan.style.margin = computedStyles.margin;
+    ghostSpan.style.border = computedStyles.border;
+    ghostSpan.style.width = computedStyles.width;
+    ghostSpan.style.height = computedStyles.height;
+    ghostSpan.style.zIndex = "2";
 
-    // Ensure it matches the textarea's exact width and height
-    ghostSpan.style.width = `${textarea.clientWidth}px`;
-    ghostSpan.style.height = `${textarea.clientHeight}px`;
-
-    // Wrap textarea in a relative container for positioning
-    const wrapper = document.createElement("div");
-    wrapper.style.position = "relative";
-    wrapper.style.display = "inline-block";
-    wrapper.style.width = `${textarea.clientWidth}px`;
-    wrapper.style.height = `${textarea.clientHeight}px`;
-
-    textarea.parentNode.insertBefore(wrapper, textarea);
-    wrapper.appendChild(ghostSpan);
-    wrapper.appendChild(textarea);
+    document.body.appendChild(ghostSpan);
 }
 
-// Function to update ghost text position
-function positionGhostText(textarea) {
+// Function to position ghost text correctly
+function positionGhostText(input) {
     if (!ghostSpan) return;
-    ghostSpan.style.left = `${textarea.offsetLeft}px`;
-    ghostSpan.style.top = `${textarea.offsetTop}px`;
+
+    const rect = input.getBoundingClientRect();
+    ghostSpan.style.left = `${rect.left + window.scrollX}px`; 
+    ghostSpan.style.top = `${rect.top + window.scrollY}px`;
+    ghostSpan.style.width = `${input.clientWidth}px`;
+    ghostSpan.style.height = `${input.clientHeight}px`;
 }
 
-// Function to detect user typing
-function handleTyping(event) {
-    activeTextarea = event.target;
-    if (!ghostSpan) {
-        createGhostTextElement(activeTextarea);
+// Function to remove ghost text when user types or moves cursor
+function clearGhostText(event) {
+    if (!activeInput) return;
+
+    if (ghostSpan) {
+        ghostSpan.remove();
+        ghostSpan = null;
     }
-    positionGhostText(activeTextarea);
-    ghostSpan.textContent = activeTextarea.value + " ✨"; // Placeholder AI text for now
+
+    if (event && event.key === "Tab" && lastAISuggestion) {
+        event.preventDefault(); // Prevent default tab behavior
+        activeInput.value += lastAISuggestion; // Insert AI suggestion if Tab is pressed
+        lastAISuggestion = "";
+    }
 }
 
-// Attach event listener to all textareas
-function detectTextareas() {
-    document.querySelectorAll("textarea").forEach(textarea => {
-        textarea.addEventListener("input", handleTyping);
-        textarea.addEventListener("focus", handleTyping);
+// Function to request AI suggestion after delay
+function requestAISuggestion(input) {
+    let text = input.value.trim();
+
+    if (text.length === 0) {
+        lastAISuggestion = "";
+        clearGhostText();
+        return;
+    }
+
+    // Simulated AI-generated text (Replace with real AI call)
+    lastAISuggestion = " everyone"; // Example suggestion
+
+    // Show AI suggestion as faded ghost text overlay
+    if (!ghostSpan) {
+        createGhostTextElement(input);
+    }
+    positionGhostText(input);
+    ghostSpan.textContent = text + lastAISuggestion;
+}
+
+// Debounced function to detect user inactivity (1 sec delay)
+function handleTyping(event) {
+    activeInput = event.target;
+
+    clearTimeout(debounceTimeout);
+    clearGhostText();
+
+    debounceTimeout = setTimeout(() => {
+        requestAISuggestion(activeInput);
+    }, 1000);
+}
+
+// Attach event listener to all text fields (textarea + input)
+function detectFields() {
+    document.querySelectorAll("textarea, input[type='text'], input[type='search']").forEach(field => {
+        field.addEventListener("input", handleTyping);
+        field.addEventListener("focus", handleTyping);
+        field.addEventListener("keydown", clearGhostText);
+        field.addEventListener("click", clearGhostText);
     });
 }
 
 // Run detection when the script loads
-detectTextareas();
+detectFields();
 
-// Also detect dynamically added textareas
-const observer = new MutationObserver(() => detectTextareas());
+// Also detect dynamically added fields
+const observer = new MutationObserver(() => detectFields());
 observer.observe(document.body, { childList: true, subtree: true });
