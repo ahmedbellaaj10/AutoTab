@@ -1,113 +1,94 @@
 console.log("AutoTab content script running...");
 
-let activeInput = null;
 let ghostSpan = null;
 let debounceTimeout = null;
-let loadingTimeout = null;
-let lastAISuggestion = "";
+let lastAISuggestion = " everyone";
+let activeInput = null;
 
-// Function to create a ghost text overlay inside the input field
-function createGhostTextElement(input) {
-    if (ghostSpan) {
-        ghostSpan.remove();
-    }
+function createGhostSpan(input) {
+  if (ghostSpan) {
+    ghostSpan.remove();
+  }
+  ghostSpan = document.createElement("span");
+  ghostSpan.style.position = "absolute";
+  ghostSpan.style.pointerEvents = "none";
+  ghostSpan.style.opacity = "0.5";
+  ghostSpan.style.color = "#aaa";
+  ghostSpan.style.zIndex = "999999"; // Ensure it's on top
 
-    ghostSpan = document.createElement("span");
-    const computedStyles = getComputedStyle(input); // Extract styles from the input field
+  const computed = getComputedStyle(input);
+  ghostSpan.style.fontSize = computed.fontSize;
+  ghostSpan.style.fontFamily = computed.fontFamily;
+  ghostSpan.style.fontWeight = computed.fontWeight;
+  ghostSpan.style.letterSpacing = computed.letterSpacing;
+  ghostSpan.style.lineHeight = computed.lineHeight;
+  ghostSpan.style.whiteSpace = "pre-wrap";
+  ghostSpan.style.background = "transparent";
 
-    ghostSpan.style.position = "absolute";
-    ghostSpan.style.pointerEvents = "none";
-    ghostSpan.style.opacity = "0.4"; // Ensure faded effect
-    ghostSpan.style.color = computedStyles.color; // Match text color
-    ghostSpan.style.fontSize = computedStyles.fontSize;
-    ghostSpan.style.fontFamily = computedStyles.fontFamily;
-    ghostSpan.style.fontWeight = computedStyles.fontWeight;
-    ghostSpan.style.letterSpacing = computedStyles.letterSpacing;
-    ghostSpan.style.lineHeight = computedStyles.lineHeight;
-    ghostSpan.style.whiteSpace = "pre-wrap";
-    ghostSpan.style.padding = computedStyles.padding;
-    ghostSpan.style.margin = computedStyles.margin;
-    ghostSpan.style.border = computedStyles.border;
-    ghostSpan.style.width = computedStyles.width;
-    ghostSpan.style.height = computedStyles.height;
-    ghostSpan.style.zIndex = "2";
-
-    document.body.appendChild(ghostSpan);
+  document.body.appendChild(ghostSpan);
 }
 
-// Function to position ghost text correctly
-function positionGhostText(input) {
-    if (!ghostSpan) return;
-
-    const rect = input.getBoundingClientRect();
-    ghostSpan.style.left = `${rect.left + window.scrollX}px`; 
-    ghostSpan.style.top = `${rect.top + window.scrollY}px`;
-    ghostSpan.style.width = `${input.clientWidth}px`;
-    ghostSpan.style.height = `${input.clientHeight}px`;
+function updateGhostText(input) {
+  // If the input is empty, don't show any suggestion.
+  if (input.value.trim() === "") {
+    clearGhost();
+    return;
+  }
+  
+  if (!ghostSpan) {
+    createGhostSpan(input);
+  }
+  
+  const rect = input.getBoundingClientRect();
+  const scrollX = window.scrollX || document.documentElement.scrollLeft;
+  const scrollY = window.scrollY || document.documentElement.scrollTop;
+  
+  const computed = getComputedStyle(input);
+  const padLeft = parseFloat(computed.paddingLeft) || 0;
+  const padTop = parseFloat(computed.paddingTop) || 0;
+  const padRight = parseFloat(computed.paddingRight) || 0;
+  
+  ghostSpan.style.left = (rect.left + scrollX + padLeft) + "px";
+  ghostSpan.style.top = (rect.top + scrollY + padTop) + "px";
+  ghostSpan.style.width = (rect.width - padLeft - padRight) + "px";
+  
+  ghostSpan.textContent = input.value + lastAISuggestion;
 }
 
-// Function to remove ghost text when user types or moves cursor
-function clearGhostText(event) {
-    if (!activeInput) return;
-
-    if (ghostSpan) {
-        ghostSpan.remove();
-        ghostSpan = null;
-    }
-
-    if (event && event.key === "Tab" && lastAISuggestion) {
-        event.preventDefault(); // Prevent default tab behavior
-        activeInput.value += lastAISuggestion; // Insert AI suggestion if Tab is pressed
-        lastAISuggestion = "";
-    }
+function clearGhost() {
+  if (ghostSpan) {
+    ghostSpan.remove();
+    ghostSpan = null;
+  }
 }
 
-// Function to request AI suggestion after delay
-function requestAISuggestion(input) {
-    let text = input.value.trim();
-
-    if (text.length === 0) {
-        lastAISuggestion = "";
-        clearGhostText();
-        return;
-    }
-
-    // Simulated AI-generated text (Replace with real AI call)
-    lastAISuggestion = " everyone"; // Example suggestion
-
-    // Show AI suggestion as faded ghost text overlay
-    if (!ghostSpan) {
-        createGhostTextElement(input);
-    }
-    positionGhostText(input);
-    ghostSpan.textContent = text + lastAISuggestion;
+function handleInput(event) {
+  activeInput = event.target;
+  clearGhost();
+  if (debounceTimeout) clearTimeout(debounceTimeout);
+  
+  debounceTimeout = setTimeout(() => {
+    updateGhostText(activeInput);
+  }, 1000);
 }
 
-// Debounced function to detect user inactivity (1 sec delay)
-function handleTyping(event) {
-    activeInput = event.target;
-
-    clearTimeout(debounceTimeout);
-    clearGhostText();
-
-    debounceTimeout = setTimeout(() => {
-        requestAISuggestion(activeInput);
-    }, 1000);
+function handleKeyDown(event) {
+  if (event.key === "Tab" && ghostSpan) {
+    event.preventDefault();
+    activeInput.value += lastAISuggestion;
+    activeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    clearGhost();
+  } else {
+    clearGhost();
+  }
 }
 
-// Attach event listener to all text fields (textarea + input)
-function detectFields() {
-    document.querySelectorAll("textarea, input[type='text'], input[type='search']").forEach(field => {
-        field.addEventListener("input", handleTyping);
-        field.addEventListener("focus", handleTyping);
-        field.addEventListener("keydown", clearGhostText);
-        field.addEventListener("click", clearGhostText);
-    });
+function attachListeners(field) {
+  field.addEventListener("input", handleInput);
+  field.addEventListener("keydown", handleKeyDown);
+  field.addEventListener("focus", handleInput);
+  field.addEventListener("click", handleInput);
+  field.addEventListener("blur", clearGhost);
 }
 
-// Run detection when the script loads
-detectFields();
-
-// Also detect dynamically added fields
-const observer = new MutationObserver(() => detectFields());
-observer.observe(document.body, { childList: true, subtree: true });
+document.querySelectorAll("textarea, input[type='text'], input[type='search']").forEach(attachListeners);
